@@ -32,8 +32,10 @@ const CreateArt = () => {
   
   // Canvas state
   const canvasRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [humanInput, setHumanInput] = useState(null);
+  const [inputMode, setInputMode] = useState('draw'); // 'draw' or 'upload'
   
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
@@ -72,10 +74,37 @@ const CreateArt = () => {
     ctx.beginPath();
     ctx.moveTo(x, y);
   };
+
+  const handleTouchDraw = (e) => {
+    if (!canvasRef.current || !isDrawing) return;
+    e.preventDefault();
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    
+    const touch = e.touches[0];
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#8b5cf6';
+    
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
   
   const startDrawing = (e) => {
     setIsDrawing(true);
     handleCanvasDraw(e);
+  };
+
+  const startTouchDrawing = (e) => {
+    setIsDrawing(true);
+    handleTouchDraw(e);
   };
   
   const stopDrawing = () => {
@@ -96,6 +125,57 @@ const CreateArt = () => {
       ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       setHumanInput(null);
     }
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be less than 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        
+        // Clear canvas first
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Calculate scaling to fit image in canvas
+        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+        const x = (canvas.width - img.width * scale) / 2;
+        const y = (canvas.height - img.height * scale) / 2;
+        
+        // Draw image on canvas
+        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+        
+        // Save canvas as image
+        const imageData = canvas.toDataURL();
+        setHumanInput(imageData);
+        toast.success('Image uploaded successfully!');
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset file input
+    e.target.value = '';
+  };
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
   };
   
   const handleSubmit = async (e) => {
@@ -336,12 +416,34 @@ const CreateArt = () => {
                 <Palette className="w-5 h-5 text-purple-600 mr-2" />
                 <h3 className="text-lg font-semibold">Human Input Canvas</h3>
               </div>
-              <button
-                onClick={clearCanvas}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Clear
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setInputMode('draw')}
+                  className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                    inputMode === 'draw'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Draw
+                </button>
+                <button
+                  onClick={() => setInputMode('upload')}
+                  className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                    inputMode === 'upload'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Upload
+                </button>
+                <button
+                  onClick={clearCanvas}
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
             
             <div className="relative">
@@ -349,18 +451,43 @@ const CreateArt = () => {
                 ref={canvasRef}
                 width={400}
                 height={400}
-                className="w-full border-2 border-gray-300 rounded-lg cursor-crosshair bg-white"
-                onMouseDown={startDrawing}
-                onMouseMove={handleCanvasDraw}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
+                className={`w-full border-2 border-gray-300 rounded-lg bg-white ${
+                  inputMode === 'draw' ? 'cursor-crosshair' : 'cursor-pointer'
+                }`}
+                onMouseDown={inputMode === 'draw' ? startDrawing : undefined}
+                onMouseMove={inputMode === 'draw' ? handleCanvasDraw : undefined}
+                onMouseUp={inputMode === 'draw' ? stopDrawing : undefined}
+                onMouseLeave={inputMode === 'draw' ? stopDrawing : undefined}
+                onTouchStart={inputMode === 'draw' ? startTouchDrawing : undefined}
+                onTouchMove={inputMode === 'draw' ? handleTouchDraw : undefined}
+                onTouchEnd={inputMode === 'draw' ? stopDrawing : undefined}
+                onClick={inputMode === 'upload' ? triggerFileUpload : undefined}
+              />
+              
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="hidden"
               />
               
               {!humanInput && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center text-gray-400">
-                    <Upload className="w-12 h-12 mx-auto mb-2" />
-                    <p className="text-sm">Draw your initial concept</p>
+                    {inputMode === 'draw' ? (
+                      <>
+                        <Palette className="w-12 h-12 mx-auto mb-2" />
+                        <p className="text-sm">Draw your initial concept</p>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-12 h-12 mx-auto mb-2" />
+                        <p className="text-sm">Click to upload an image</p>
+                        <p className="text-xs mt-1">PNG, JPG, GIF up to 5MB</p>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -368,7 +495,10 @@ const CreateArt = () => {
             
             <div className="mt-4 p-4 bg-purple-50 rounded-lg">
               <p className="text-sm text-purple-700">
-                <strong>Tip:</strong> Your drawing will be combined with AI generation to create a unique collaborative artwork.
+                <strong>Tip:</strong> {inputMode === 'draw' 
+                  ? 'Your drawing will be combined with AI generation to create a unique collaborative artwork.'
+                  : 'Your uploaded image will be combined with AI generation to create a unique collaborative artwork.'
+                }
               </p>
             </div>
           </motion.div>
